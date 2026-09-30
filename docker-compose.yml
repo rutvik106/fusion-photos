@@ -1,0 +1,81 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: fusion
+      POSTGRES_PASSWORD: fusion
+      POSTGRES_DB: fusion
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fusion"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    # quay.io mirror — Docker Hub pulls of minio/minio were failing from this machine
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: fusion-dev
+      MINIO_ROOT_PASSWORD: fusion-dev-secret
+    ports:
+      - "9000:9000"   # S3 API (used by the API server for presigning + stat)
+      - "9001:9001"   # web console (dev only)
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./api
+    environment:
+      ADDR: ":8080"
+      DATABASE_URL: postgres://fusion:fusion@db:5432/fusion?sslmode=disable
+      # Defaults below target local MinIO. Create a root .env (see .env.example) with
+      # real AWS values to switch media storage to S3 — compose substitutes them here.
+      S3_ENDPOINT: ${S3_ENDPOINT:-minio:9000}               # server-internal endpoint
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-localhost:9000} # endpoint baked into presigned URLs
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-fusion-dev}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-fusion-dev-secret}
+      S3_BUCKET: ${S3_BUCKET:-fusion-media}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      DEV_MODE: ${DEV_MODE:-true}          # devCode returned in OTP responses — never in prod
+      QUOTA_BYTES: ${QUOTA_BYTES:-2147483648} # 2 GiB dev quota
+      OTP_PEPPER: ${OTP_PEPPER:-}          # set in prod; empty dev = ephemeral pepper at boot
+      OTP_TTL: ${OTP_TTL:-10m}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      OTP_PER_EMAIL_LIMIT: ${OTP_PER_EMAIL_LIMIT:-5}
+      OTP_PER_EMAIL_WINDOW: ${OTP_PER_EMAIL_WINDOW:-15m}
+      OTP_PER_IP_LIMIT: ${OTP_PER_IP_LIMIT:-200}
+      OTP_PER_IP_WINDOW: ${OTP_PER_IP_WINDOW:-1h}
+      SES_ENABLED: ${SES_ENABLED:-false}   # true -> send codes via SES (needs AWS creds)
+      SES_REGION: ${SES_REGION:-us-east-1}
+      SES_FROM: ${SES_FROM:-}              # verified SES sender, required when SES_ENABLED=true
+      # Independent replica. Empty by default: the service then makes no remote-
+      # protection claim. Point it at a second bucket (MinIO dev / cross-region AWS).
+      S3_REPLICA_BUCKET: ${S3_REPLICA_BUCKET:-}
+      S3_REPLICA_ENDPOINT: ${S3_REPLICA_ENDPOINT:-}
+      S3_REPLICA_ACCESS_KEY: ${S3_REPLICA_ACCESS_KEY:-}
+      S3_REPLICA_SECRET_KEY: ${S3_REPLICA_SECRET_KEY:-}
+      S3_REPLICA_REGION: ${S3_REPLICA_REGION:-us-east-1}
+      REPLICATION_INTERVAL: ${REPLICATION_INTERVAL:-30s} # short in dev so tests see it
+      RECONCILE_INTERVAL: ${RECONCILE_INTERVAL:-5m}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:

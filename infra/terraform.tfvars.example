@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in globally-unique bucket names.
+aws_region     = "us-east-1"
+replica_region = "us-west-2"
+name_prefix    = "fusion-photos"
+
+serving_bucket = "fusion-photos-media-prod-CHANGE-ME"
+replica_bucket = "fusion-photos-media-prod-replica-CHANGE-ME"
+
+# Object Lock can only be enabled at bucket creation — decide before first apply.
+enable_object_lock = false
+object_lock_days   = 30
+
+db_engine_version        = "16.4"
+db_instance_count        = 2
+db_min_acu               = 0.5
+db_max_acu               = 4
+db_backup_retention_days = 30
+
+budget_amount_usd    = 200
+budget_alert_emails  = ["ops@example.com"]
+app_iam_user_name    = "fusion-photos-api"

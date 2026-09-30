@@ -1,0 +1,52 @@
+{
+  "format": "fusion-photos-crypto-vectors",
+  "version": 1,
+  "notes": [
+    "Wire format shared by all clients. Do not edit by hand.",
+    "wrapped/envelope values are base64(nonce(24) || AEAD_ciphertext_including_tag).",
+    "payload.wireB64 is base64(header(24) || secretstream frames) - the resource object format.",
+    "payload.headerB64/blobB64 are the manifest envelope format (both stored server-side).",
+    "The secretstream header is random in libsodium; it is pinned here and only decrypted."
+  ],
+  "sodiumVersion": "1.0.22",
+  "constants": {
+    "pwhashSaltBytes": 16,
+    "pwhashOpsLimitModerate": 3,
+    "pwhashMemLimitModerate": 268435456,
+    "pwhashAlgArgon2id13": 2,
+    "aeadNonceBytes": 24,
+    "aeadKeyBytes": 32,
+    "streamHeaderBytes": 24,
+    "streamTagFinal": 3
+  },
+  "argon2id": {
+    "passphrase": "correct horse battery staple 42!",
+    "saltB64": "AAECAwQFBgcICQoLDA0ODw==",
+    "keyLen": 32,
+    "kekB64": "2HiGp+lBeBhXoUAAGjC1Xb2tOElXYNQe/+i32QN7ges="
+  },
+  "vaultKeyWrap": {
+    "vaultKeyB64": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=",
+    "nonceB64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+    "wrappedB64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3SwOAqShsv7kI6iTe2zaxxWz3bKsD9ws9R05OgbaJBY4aBaAcmSmxIO38zCf5vOSn"
+  },
+  "assetKeyWrap": {
+    "assetKeyB64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+    "vaultKeyB64": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=",
+    "nonceB64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZX",
+    "envelopeB64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXXD8aYmjR5nB2e5/3+UqotbDPmiFLKN9PIXWE1Ie+rO5AhRM6d+A6oKG2ZIRGqru7"
+  },
+  "recoveryWrap": {
+    "vaultKeyB64": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=",
+    "recoveryKeyB64": "UFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm8=",
+    "nonceB64": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3",
+    "envelopeB64": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3EHNN0mGHweogmg80enTdSLup3lWoySGNfHEN2tHiTRZiCOYjB2tnrk2/X39ElD4v"
+  },
+  "payload": {
+    "assetKeyB64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+    "plaintextB64": "ZnVzaW9uLXBob3RvcyBjcnlwdG8gdmVjdG9yIHBheWxvYWQgLSBrZWVwIGJ5dGUtZXhhY3Q=",
+    "headerB64": "k71aVV5V07Nk/Q3XhJtCmx9urUgaBQbC",
+    "blobB64": "daB3i4J1gHsfkYNuBWMaKuUbj1ceZIgTOWL47rqbzsU8Eku/tD6bHHLI2fZ8oDJtOXFId0fOrIA+CsGdzMABgh1eIw9lOA==",
+    "wireB64": "k71aVV5V07Nk/Q3XhJtCmx9urUgaBQbCdaB3i4J1gHsfkYNuBWMaKuUbj1ceZIgTOWL47rqbzsU8Eku/tD6bHHLI2fZ8oDJtOXFId0fOrIA+CsGdzMABgh1eIw9lOA=="
+  }
+}

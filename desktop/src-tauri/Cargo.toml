@@ -1,0 +1,28 @@
+[package]
+name = "fusion-photos-desktop"
+version = "0.1.0"
+description = "Native desktop host for the Fusion Photos client (TB-scale Takeout migration)"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# main.rs calls this; the *_lib suffix keeps the binary and library target names distinct.
+name = "fusion_photos_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+# OS keychain for the vault key material (macOS Keychain / Windows Credential Manager /
+# freedesktop Secret Service). Not a substitute for the passphrase — just avoids
+# re-deriving on every launch.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+[features]
+default = []

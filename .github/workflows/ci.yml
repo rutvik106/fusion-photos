@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    name: API (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: api/go.sum
+      - run: gofmt -l cmd/server | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - run: go test ./...
+      - name: smoke + reconcile scripts parse
+        working-directory: ${{ github.workspace }}
+        run: python3 -m py_compile scripts/smoke_upload.py scripts/reconcile_missing.py
+      - name: start Postgres + MinIO for integration tests
+        working-directory: ${{ github.workspace }}
+        run: docker compose up -d db minio
+      - name: wait for Postgres
+        working-directory: ${{ github.workspace }}
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T db pg_isready -U fusion >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "postgres did not become ready" >&2
+          exit 1
+      - name: integration tests (DB + S3: replication verification, reconciliation)
+        run: FUSION_INTEGRATION=1 go test -run Integration -v ./...
+
+  infra:
+    name: Infra (Terraform)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  android:
+    name: Android (Kotlin crypto + app logic)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # :app is an Android module, so its unit tests need an SDK to assemble against.
+      # (No emulator: the connected/instrumentation test is run manually.)
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      # :crypto checks the Kotlin E2EE format against shared/crypto-vectors.json — the same
+      # file the web client is verified against, so the two clients cannot drift apart.
+      - run: ./gradlew :crypto:test --no-daemon
+      # :app checks the pure platform glue: upload slicing (mirrors the server's own tests),
+      # the vault wire shapes, and the supported-media rules.
+      - run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+  web:
+    name: Web (Vue + TS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx vue-tsc -b
+      - run: npm run build
+      - name: takeout import foundations test (pure, no backend)
+        run: npm run test:import
+      - name: browser lib tests (signed-URL retry)
+        run: npm run test:lib
+      - name: desktop config parses (Tauri scaffold; Rust is not built in CI)
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('../desktop/src-tauri/tauri.conf.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('../desktop/src-tauri/capabilities/default.json','utf8'))"
+      - name: crypto round-trip test (pure, no backend)
+        run: node tests/crypto-roundtrip.test.cjs
+      - name: shared crypto vectors (cross-client contract with Android)
+        run: node tests/crypto-vectors.test.cjs

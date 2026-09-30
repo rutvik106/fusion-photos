@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fusion Photos",
+  "version": "0.1.0",
+  "identifier": "app.fusion.photos.desktop",
+  "build": {
+    "//": "The desktop host serves the SAME web client — build it with `cd web && npm run build` first.",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "//": "withGlobalTauri exposes window.__TAURI__.core.invoke, which the import engine's tauriByteSource() uses.",
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Fusion Photos",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "//": "Left null here: the web client ships its own strict CSP meta tag. Packaging MUST rewrite that tag to add the API origin to connect-src — see desktop/README.md.",
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

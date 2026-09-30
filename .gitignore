@@ -1,0 +1,36 @@
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+
+# compiled test fixtures (web/tests/.build)
+web/tests/.build/
+
+# Go
+api/server
+api/fusion-api
+
+# Local env / secrets
+.env
+web/node_modules
+web/dist
+api/server
+
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/crash.log
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.kotlin/
+.env.local
+
+# OS
+.DS_Store

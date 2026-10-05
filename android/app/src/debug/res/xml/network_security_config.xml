@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY (src/debug overrides src/main for this resource).
+
+  The release policy (src/main/res/xml/network_security_config.xml) permits cleartext for the
+  developer's own machine only, so a misconfigured base URL fails closed instead of leaking a
+  session token. That is right for anything shipped, but it makes a *debug* build untestable from
+  a physical device, which has no `10.0.2.2` and may reach the backend over the LAN.
+
+  So debug builds relax cleartext generally. The release build is unaffected: it does not include
+  this file, and the app's default base URL is still `http://10.0.2.2:8080`.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

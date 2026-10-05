@@ -1,5 +1,6 @@
 package com.fusionphotos.crypto
 
+import java.security.MessageDigest
 import java.util.Base64
 
 /** Raised for a malformed envelope or a failed authentication — never swallowed. */
@@ -32,6 +33,25 @@ object Crypto {
 
     fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
     fun unb64(text: String): ByteArray = Base64.getDecoder().decode(text)
+
+    /**
+     * Hex SHA-256 of the *plaintext* original, recorded inside the encrypted manifest.
+     *
+     * The server never sees this (it lives in the ciphertext), so it can neither verify nor
+     * forge it — its only job is to let a client detect a bad re-upload of the same bytes.
+     */
+    fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    /** Decoded byte length of a base64 field — used to declare ciphertext sizes exactly. */
+    fun b64Len(text: String): Long {
+        val padding = when {
+            text.endsWith("==") -> 2
+            text.endsWith("=") -> 1
+            else -> 0
+        }
+        return (text.length.toLong() * 3 / 4) - padding
+    }
 
     private fun failed(): Nothing =
         throw CryptoException("payload decryption failed (corrupt ciphertext or wrong key)")

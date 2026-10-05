@@ -1,5 +1,6 @@
 package com.fusionphotos.app
 
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,10 +16,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.fusionphotos.app.media.LocalPhoto
+import com.fusionphotos.app.upload.QueueCounts
 
 /** Step 1 — email OTP. The code is typed by the user; in dev the server echoes it back. */
 @Composable
@@ -46,9 +49,23 @@ internal fun SignInScreen(
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(2.dp))
+    // Debug builds relax the cleartext policy so a physical device can reach a LAN backend
+    // (see src/debug/res/xml/network_security_config.xml). Release builds stay fail-closed, so
+    // the hint has to say which one this is rather than assert one of them.
+    val debuggable =
+        (LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     Text(
-        "The emulator reaches your machine at http://10.0.2.2:8080. Plain HTTP is allowed " +
-            "only for localhost; anything else must be HTTPS.",
+        buildString {
+            append("The emulator reaches your machine at http://10.0.2.2:8080. ")
+            if (debuggable) {
+                append(
+                    "This debug build also allows plain HTTP over your LAN; a release build " +
+                        "allows plain HTTP to localhost only, and requires HTTPS elsewhere.",
+                )
+            } else {
+                append("Plain HTTP is allowed only for localhost; anything else must be HTTPS.")
+            }
+        },
         style = MaterialTheme.typography.bodySmall,
         color = Color(0xFF666666),
     )
@@ -138,15 +155,23 @@ internal fun UnlockScreen(
     }
 }
 
-/** Step 3 — discovery. Uploading from the device is the next increment. */
+/** Step 3 — discovery and the durable backup queue. */
 @Composable
 internal fun LibraryScreen(
     status: String,
     photos: List<LocalPhoto>?,
     busy: Boolean,
     vaultUnlocked: Boolean,
+    keyEnrolled: Boolean,
+    notificationsAllowed: Boolean,
     hasPermission: Boolean,
+    uploadStatus: String,
+    counts: QueueCounts?,
     onGrantOrScan: () -> Unit,
+    onQueueAll: () -> Unit,
+    onBackUpNow: () -> Unit,
+    onRetryFailed: () -> Unit,
+    onClearFinished: () -> Unit,
 ) {
     Text("Camera library", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(6.dp))
@@ -163,6 +188,75 @@ internal fun LibraryScreen(
     if (status.isNotEmpty()) {
         Spacer(Modifier.height(12.dp))
         Text(status, style = MaterialTheme.typography.bodyMedium)
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Button(
+        onClick = onQueueAll,
+        enabled = !busy && vaultUnlocked && hasPermission && !photos.isNullOrEmpty(),
+    ) {
+        val count = photos?.size ?: 0
+        Text(if (count > 0) "Queue $count photo(s) for backup" else "Queue photos")
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Encrypted on this device first: only ciphertext is uploaded, and the file names, " +
+            "dates and digest stay inside the encrypted manifest. Originals are stored at full " +
+            "quality; a preview and thumbnail are generated here and encrypted under the same " +
+            "key, so a gallery can show the photo without fetching the original.",
+        style = MaterialTheme.typography.bodySmall,
+        color = Color(0xFF666666),
+    )
+    Spacer(Modifier.height(10.dp))
+    Text(
+        if (keyEnrolled) {
+            "Background backup is on: the queue keeps working after a restart and while the " +
+                "phone is locked, using the vault key wrapped by this device's Keystore."
+        } else {
+            "Background backup is waiting for unlock: the vault key is not stored on this " +
+                "device yet, so nothing runs once the app is closed."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = Color(0xFF444444),
+    )
+    Spacer(Modifier.height(6.dp))
+    Text(
+        if (notificationsAllowed) {
+            "A backup you start runs in the foreground with a progress notification, so " +
+                "Android will not defer it."
+        } else {
+            "Notifications are off, so a backup you start cannot show progress — it still " +
+                "runs, but Android may defer it."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = Color(0xFF444444),
+    )
+
+    counts?.let { queue ->
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Queue: ${queue.pending} pending · ${queue.inFlight} in flight · " +
+                "${queue.uploaded} uploaded · ${queue.failed} waiting to retry · " +
+                "${queue.dead} failed",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBackUpNow, enabled = !busy) { Text("Back up now") }
+            if (queue.dead > 0) {
+                TextButton(onClick = onRetryFailed, enabled = !busy) {
+                    Text("Retry ${queue.dead} failed")
+                }
+            }
+            if (queue.uploaded > 0) {
+                TextButton(onClick = onClearFinished, enabled = !busy) { Text("Clear finished") }
+            }
+        }
+    }
+
+    if (uploadStatus.isNotEmpty()) {
+        Spacer(Modifier.height(10.dp))
+        Text(uploadStatus, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF1B5E20))
     }
 
     photos?.take(5)?.forEach { photo ->

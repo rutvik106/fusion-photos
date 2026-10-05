@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -12,12 +13,30 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Android 10+ redacts location EXIF from media read through the provider when the app does
+         not hold this permission, so a backup without it silently stores photos with their GPS
+         zeroed (found on a real device; see android/README.md). The location is encrypted
+         client-side like everything else, so the server never sees it either way. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+
+    <!-- A long user-started backup runs in a foreground service: the user can see it, and the
+         OS does not treat it as deferrable background work. dataSync is the right type for
+         uploading the user's own data, and Android 14+ requires it to be declared here as well
+         as on the service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Android 13+ gates notifications behind a runtime permission. Without it the backup
+         still runs; only the progress/finished notification is invisible. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!--
         allowBackup is false on purpose: this app holds an encrypted catalog and a vault
         key envelope, and a cloud backup of a device's copy is not something the user asked
         for. The ciphertext already lives server-side.
     -->
     <application
+        android:name=".FusionApp"
         android:allowBackup="false"
         android:label="Fusion Photos"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -33,5 +52,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- WorkManager's own foreground service, given the dataSync type. Merging rather than
+             declaring a new service keeps WorkManager's lifecycle handling intact. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 </manifest>

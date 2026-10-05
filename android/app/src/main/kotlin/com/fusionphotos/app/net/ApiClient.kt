@@ -28,7 +28,7 @@ interface VaultRemote {
 class ApiClient(
     private val baseUrlProvider: () -> String,
     private val tokenProvider: () -> String?,
-) : VaultRemote {
+) : VaultRemote, UploadRemote {
     suspend fun requestOtp(email: String): Dtos.OtpRequest =
         Dtos.parseOtpRequest(send("/auth/otp/request", "POST", JSONObject().put("email", email)))
 
@@ -43,6 +43,51 @@ class ApiClient(
 
     override suspend fun putVault(blob: Dtos.VaultBlob) {
         send("/vault", "PUT", Dtos.vaultPutBody(blob))
+    }
+
+    override suspend fun startSession(
+        items: List<UploadDtos.UploadItemRequest>,
+    ): List<UploadDtos.UploadItemPlan> =
+        UploadDtos.parseSession(send("/upload-session", "POST", UploadDtos.sessionBody(items)))
+
+    override suspend fun complete(
+        items: List<UploadDtos.UploadCompletion>,
+    ): List<UploadDtos.CommittedAsset> =
+        UploadDtos.parseComplete(send("/upload-session/complete", "POST", UploadDtos.completeBody(items)))
+
+    override suspend fun multipartInit(
+        assetId: String,
+        variant: String,
+        partCount: Int,
+    ): UploadDtos.MultipartInit = UploadDtos.parseMultipartInit(
+        send("/upload-session/$assetId/multipart/init", "POST", UploadDtos.multipartInitBody(variant, partCount)),
+    )
+
+    override suspend fun multipartStatus(assetId: String, variant: String): UploadDtos.MultipartStatus =
+        UploadDtos.parseMultipartStatus(
+            send("/upload-session/$assetId/multipart/status", "POST", UploadDtos.multipartVariantBody(variant)),
+        )
+
+    override suspend fun multipartPartUrls(
+        assetId: String,
+        variant: String,
+        numbers: List<Int>,
+    ): List<UploadDtos.PartUrl> = UploadDtos.parsePartUrls(
+        send("/upload-session/$assetId/multipart/parts", "POST", UploadDtos.multipartPartsBody(variant, numbers)),
+    )
+
+    override suspend fun multipartComplete(
+        assetId: String,
+        variant: String,
+        parts: List<UploadDtos.ClientPart>,
+    ): Long = send(
+        "/upload-session/$assetId/multipart/complete",
+        "POST",
+        UploadDtos.multipartCompleteBody(variant, parts),
+    ).optLong("size", 0)
+
+    override suspend fun multipartAbort(assetId: String, variant: String) {
+        send("/upload-session/$assetId/multipart/abort", "POST", UploadDtos.multipartVariantBody(variant))
     }
 
     private suspend fun send(path: String, method: String, body: JSONObject?): JSONObject =

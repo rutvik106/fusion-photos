@@ -73,6 +73,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // Durable background backup: the plan asks for "MediaStore and WorkManager with network,
+    // battery and retry constraints … jobs must recover across restart".
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+
     // On-device verification of the Android adapter against the shared vectors.
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")

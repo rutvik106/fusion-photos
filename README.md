@@ -47,6 +47,35 @@ docker compose up --build
 cd web && npm install && npm run dev
 ```
 
+### …without Docker
+
+Docker is convenient but not required — the API migrates its own schema on boot and creates its
+own bucket, so all it needs is a Postgres and an S3-compatible store. This is how it was run
+while Docker Desktop was unavailable, and it serves the same web client:
+
+```bash
+# Postgres (Homebrew) — a role/db matching compose's DATABASE_URL
+createdb fusion && psql -d fusion -c "CREATE ROLE fusion LOGIN SUPERUSER PASSWORD 'fusion'"
+
+# MinIO (Homebrew)
+MINIO_ROOT_USER=fusion-dev MINIO_ROOT_PASSWORD=fusion-dev-secret \
+MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:5173 \
+  minio server --address :9000 --console-address :9001 /tmp/fusion-minio
+
+# API
+cd api && DATABASE_URL='postgres://fusion:fusion@localhost:5432/fusion?sslmode=disable' \
+  S3_ENDPOINT=localhost:9000 S3_PUBLIC_ENDPOINT=localhost:9000 \
+  S3_ACCESS_KEY=fusion-dev S3_SECRET_KEY=fusion-dev-secret S3_BUCKET=fusion-media \
+  DEV_MODE=true go run ./cmd/server
+
+# Web client
+cd web && npm run dev
+```
+
+Two details worth keeping: `S3_PUBLIC_ENDPOINT` is the host baked into presigned URLs (so it must
+be reachable *from the client*), and MinIO needs `MINIO_API_CORS_ALLOW_ORIGIN` for the browser,
+which fetches ciphertext directly and decrypts it locally.
+
 Open http://localhost:5173:
 
 1. Enter an email → **Send sign-in code** (dev mode shows the code on screen).
@@ -159,7 +188,7 @@ client**, checked against a single shared file:
 ```bash
 cd android
 ./gradlew :crypto:test            # 22 vector checks on the host — no Android SDK or emulator
-./gradlew :app:testDebugUnitTest  # 25 checks of the app's own logic (no device needed)
+./gradlew :app:testDebugUnitTest  # 55 checks of the app's own logic (no device needed)
 ./gradlew :app:assembleDebug      # the app module
 ```
 
@@ -177,14 +206,68 @@ testsuite AndroidSodiumVectorTest  tests="1" failures="0" errors="0" skipped="0"
 The `:app` unit tests pin the parts that would otherwise only fail on a phone: upload slicing
 (expectations copied from the **server's** own tests, so the two can't disagree about which
 bytes are part *n*), the vault wire shapes (including the legacy flat envelope), the
-supported-media rules, and the vault round trip (create → unlock → recover, against a real
-libsodium on the JVM).
+supported-media rules, the vault round trip (create → unlock → recover, against a real
+libsodium on the JVM) and the upload pipeline — which uploads to a fake server and then
+**decrypts what it sent**, checking the digest, the manifest and the sizes the server verifies.
 
 The whole chain has also been driven **on a device against the real API** — sign in with an
-emailed OTP, create the vault over the wire, unlock it, grant photo access and discover the
-camera roll — which caught a genuine bug: `create()` returned only the recovery key, so the
-app held no vault key and could not have encrypted anything. That is fixed and pinned by a
-test. Details in [`android/README.md`](./android/README.md).
+emailed OTP, create the vault over the wire, unlock it, grant photo access, discover the
+camera roll, encrypt and upload a photo, then upload it again to confirm the idempotent
+replay. And the result is checked from outside the project entirely:
+
+```bash
+python3 scripts/verify_upload_decrypts.py android-e2e@example.com 'correct-horse-battery-staple' photo.png
+# → unwraps the vault key with Argon2id, the asset key from keyEnvelope, decrypts the
+#   encrypted manifest and the object in S3 — byte-identical to the original on the phone.
+```
+
+That independent check (PyNaCl, none of this repo's code) is what makes the E2EE claim
+testable rather than a matter of trust. Running it for real also caught a genuine bug:
+`VaultManager.create()` returned only the recovery key, so the app held no vault key and could
+not have encrypted anything. Fixed and pinned by a test. Details in
+[`android/README.md`](./android/README.md).
+
+When the local backend is unavailable (Docker down, say), a device run can be driven without it:
+`scripts/stub_api.py` is a harness that speaks the same wire shapes — and hands the app a real
+Argon2id vault envelope — while `scripts/verify_stub_run.py` decrypts what the harness received
+and compares it with the originals pulled off the device.
+
+```bash
+python3 scripts/stub_api.py --port 8080 --slow-put 2.0 --debug   # app: Server URL http://10.0.2.2:8080
+python3 scripts/verify_stub_run.py --expect 7 --device-dir /tmp/device_photos
+# → "decrypted every asset the stub received ... byte-identical to the originals on the device"
+```
+
+It proves the *client*, not the service: the harness validates nothing (no sizes, no tenancy, no
+quota), which is exactly why the same path is also exercised against the real API.
+
+Backups also run **with the app closed**: the queue is a durable SQLite table handed to
+WorkManager (network + battery constraints, exponential backoff with jitter, a dead-letter
+state, and the "object stored but commit failed" case handled by the idempotency ref). The
+vault key is enrolled in the Android Keystore so a worker can decrypt after the process is
+gone. On the device, killing the app process and restoring the network produced a **fresh
+process running the worker on its own** (`Worker result SUCCESS`, `uploaded : 1`) with no app
+launch — and that background-uploaded photo still decrypted byte-identical. The trade-off is
+stated plainly rather than buried: an enrolled key is reachable by code inside this app's
+sandbox on an unlocked device, which was not true while the key was memory-only.
+
+Large originals (over 32 MiB of ciphertext) go **multipart and resumable**: `multipart/init`,
+per-part PUTs, `multipart/complete`. Resume needs no client-side part bookkeeping at all — the
+upload session is keyed by the client ref, so a retry lands on the same asset and the same
+multipart upload, and `multipart/status` says which parts S3 already holds. A 40 MiB original
+was pushed through that path on the device in six parts; the assembled object came back as
+41,943,081 bytes (the original + 41) and decrypted byte-identical.
+
+A backup the user starts deliberately runs as a **foreground service** (`dataSync`) with a
+progress notification, so a long job is visible and not treated as deferrable background work;
+the periodic heartbeat stays invisible. That is unit-tested, the merged manifest is verified in
+the built APK, and the run itself is now **verified on a device**: backgrounded mid-job,
+`dumpsys` showed `isForeground=true` for the whole transfer while the notification advanced
+`Preparing…` → `1 uploaded · 6 still to go` → … , ending at "Backup finished / 7 uploaded". The
+bytes that path produced were then decrypted by an independent implementation and matched the
+originals byte for byte. Docker was down, so the device run used `scripts/stub_api.py` (a
+harness speaking the same wire shapes, not the service) — see
+[`android/README.md`](./android/README.md) for the evidence and what the harness does *not* prove.
 
 Verifying on a real 16 KB page-size image paid off: it caught `lazysodium-android:5.1.0`
 shipping a `libsodium.so` whose LOAD segment was only 4 KB aligned, which cannot be mapped
